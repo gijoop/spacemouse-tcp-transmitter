@@ -3,7 +3,7 @@
 sudo chmod 666 /dev/hidraw*
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV_DIR="$SCRIPT_DIR/venv"
+VENV_DIR="$SCRIPT_DIR/.venv"
 LOG_FILE="$SCRIPT_DIR/spacemouse.log"
 PYTHON_SCRIPT="$SCRIPT_DIR/main.py"
 
