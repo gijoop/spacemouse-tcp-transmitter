@@ -1,5 +1,7 @@
 import pyspacemouse
 import time
+import socket
+import json
 from collections import namedtuple
 
 class SpaceMouseController:
@@ -50,7 +52,6 @@ class SpaceMouseController:
         if not raw_state:
             return None
 
-        # Tworzymy słownik z danymi po kalibracji
         calibrated_values = {
             'x': raw_state.x - self.calibration_data[0],
             'y': raw_state.y - self.calibration_data[1],
@@ -61,19 +62,10 @@ class SpaceMouseController:
             'buttons': raw_state.buttons
         }
 
-        # Zastosuj deadzone
         for key in ['x', 'y', 'z', 'roll', 'pitch', 'yaw']:
             calibrated_values[key] = self.apply_deadzone(calibrated_values[key])
 
-        # Zwracamy po prostu słownik jako reprezentację stanu
         return calibrated_values
-
-
-    def print_state(self, state):
-        if state:
-            print(f"X: {state['x']:.3f}, Y: {state['y']:.3f}, Z: {state['z']:.3f}, "
-                f"Roll: {state['roll']:.3f}, Pitch: {state['pitch']:.3f}, Yaw: {state['yaw']:.3f}, "
-                f"Buttons: {state['buttons']}")
 
 
 def button_callback(buttons):
@@ -82,7 +74,6 @@ def button_callback(buttons):
 def main():
     controller = SpaceMouseController(deadzone_threshold=0.05)
 
-    # Do not use callback for position – we handle it manually with calibration
     success = pyspacemouse.open(
         dof_callback=None,
         button_callback=button_callback
@@ -92,20 +83,33 @@ def main():
         print("Failed to open SpaceMouse connection")
         return
 
+    # Ustawienia klienta TCP
+    TCP_IP = '192.168.1.14'  # lub adres serwera docelowego
+    TCP_PORT = 5005
+
     try:
-        print("SpaceMouse connected. Move the device or press buttons (Ctrl+C to quit)")
-        while True:
-            state = controller.get_calibrated_state()
-            if state:
-                controller.print_state(state)
-            time.sleep(0.02)  # 50 Hz refresh rate
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.connect((TCP_IP, TCP_PORT))
+            print("Connected to TCP server at", TCP_IP, TCP_PORT)
+            print("Move the device or press buttons (Ctrl+C to quit)")
+
+            while True:
+                state = controller.get_calibrated_state()
+                if state:
+                    # Zamiana danych na JSON i wysłanie
+                    message = json.dumps(state).encode('utf-8')
+                    sock.sendall(message + b'\n')  # newline jako separator ramek
+                time.sleep(0.02)
 
     except KeyboardInterrupt:
         print("\nExiting...")
 
+    except ConnectionRefusedError:
+        print("Unable to connect to TCP server. Is it running?")
+
     finally:
         pyspacemouse.close()
 
+
 if __name__ == "__main__":
     main()
-
