@@ -84,7 +84,7 @@ def main():
         return
 
     # Ustawienia klienta TCP
-    TCP_IP = '192.168.1.14'  # lub adres serwera docelowego
+    TCP_IP = '127.0.0.1'  # lub adres serwera docelowego
     TCP_PORT = 5005
 
     try:
