@@ -71,6 +71,13 @@ class SpaceMouseController:
 def button_callback(buttons):
     print(f"Buttons pressed: {buttons}")
 
+def is_zero_state(state):
+    """Check if all axes are zero and no buttons are pressed"""
+    for key in ['x', 'y', 'z', 'roll', 'pitch', 'yaw']:
+        if abs(state[key]) > 0.0001:  # small epsilon to account for floating point
+            return False
+    return not any(state['buttons'])
+
 def main():
     controller = SpaceMouseController(deadzone_threshold=0.05)
 
@@ -93,12 +100,40 @@ def main():
             print("Connected to TCP server at", TCP_IP, TCP_PORT)
             print("Move the device or press buttons (Ctrl+C to quit)")
 
+            zero_count = 0
+            last_non_zero_state = None
+            is_sleeping = False
+
             while True:
                 state = controller.get_calibrated_state()
                 if state:
-                    # Zamiana danych na JSON i wysłanie
-                    message = json.dumps(state).encode('utf-8')
-                    sock.sendall(message + b'\n')  # newline jako separator ramek
+                    if is_zero_state(state):
+                        zero_count += 1
+                        if zero_count >= 10 and not is_sleeping:
+                            print("Detected 10 zero states - entering sleep mode")
+                            is_sleeping = True
+                    else:
+                        zero_count = 0
+                        last_non_zero_state = state
+                        if is_sleeping:
+                            print("Detected movement - waking up")
+                            is_sleeping = False
+
+                    if not is_sleeping:
+                        # Zamiana danych na JSON i wysłanie
+                        message = json.dumps(state).encode('utf-8')
+                        sock.sendall(message + b'\n')  # newline jako separator ramek
+                    elif last_non_zero_state is not None:
+                        # Sprawdź, czy stan się zmienił (np. przycisk został naciśnięty)
+                        current_state = controller.get_calibrated_state()
+                        if current_state and (current_state['buttons'] != last_non_zero_state['buttons'] or 
+                                            not is_zero_state(current_state)):
+                            zero_count = 0
+                            is_sleeping = False
+                            print("State changed - waking up")
+                            message = json.dumps(current_state).encode('utf-8')
+                            sock.sendall(message + b'\n')
+
                 time.sleep(0.02)
 
     except KeyboardInterrupt:
