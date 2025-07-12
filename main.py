@@ -4,15 +4,16 @@ import socket
 import json
 from collections import namedtuple
 
+SERVER_IP = '10.0.0.105'
+SERVER_PORT = 5005
+DEADZONE = 0.15
+
 class SpaceMouseController:
     def __init__(self, deadzone_threshold=0.1, calibration_samples=50):
         self.deadzone_threshold = deadzone_threshold
         self.calibration_samples = calibration_samples
         self.calibration_data = None
         self.is_calibrated = False
-
-    def apply_deadzone(self, value):
-        return 0.0 if abs(value) < self.deadzone_threshold else value
 
     def calibrate(self):
         print("Calibrating SpaceMouse... Please don't touch the device.")
@@ -66,6 +67,23 @@ class SpaceMouseController:
             calibrated_values[key] = self.apply_deadzone(calibrated_values[key])
 
         return calibrated_values
+    
+    def apply_deadzone(self, value):
+        return 0.0 if abs(value) < self.deadzone_threshold else value
+    
+    def normalize_data(self, state):
+        """Normalize the state data to a range of -1 to 1"""
+        normalized = {}
+        for key in ['x', 'y', 'z', 'roll', 'pitch', 'yaw']:
+            if abs(state[key]) > 0.0001:
+                if state[key] > 0:
+                    normalized[key] = (state[key] - self.deadzone_threshold) / (1.0 - self.deadzone_threshold)
+                else:
+                    normalized[key] = (state[key] + self.deadzone_threshold) / (1.0 - self.deadzone_threshold)
+            else:
+                normalized[key] = 0.0
+        normalized['buttons'] = state['buttons']
+        return normalized
 
 
 def button_callback(buttons):
@@ -79,7 +97,7 @@ def is_zero_state(state):
     return not any(state['buttons'])
 
 def main():
-    controller = SpaceMouseController(deadzone_threshold=0.05)
+    controller = SpaceMouseController(deadzone_threshold=DEADZONE)
 
     success = pyspacemouse.open(
         dof_callback=None,
@@ -90,14 +108,10 @@ def main():
         print("Failed to open SpaceMouse connection")
         return
 
-    # Ustawienia klienta TCP
-    TCP_IP = '127.0.0.1'  # lub adres serwera docelowego
-    TCP_PORT = 5005
-
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.connect((TCP_IP, TCP_PORT))
-            print("Connected to TCP server at", TCP_IP, TCP_PORT)
+            sock.connect((SERVER_IP, SERVER_PORT))
+            print("Connected to TCP server at", SERVER_IP, SERVER_PORT)
             print("Move the device or press buttons (Ctrl+C to quit)")
 
             zero_count = 0
@@ -106,6 +120,7 @@ def main():
 
             while True:
                 state = controller.get_calibrated_state()
+                state = controller.normalize_data(state)
                 if state:
                     if is_zero_state(state):
                         zero_count += 1
