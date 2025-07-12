@@ -2,6 +2,7 @@ import pyspacemouse
 import time
 import socket
 import json
+import select
 from collections import namedtuple
 
 SERVER_IP = '10.0.0.105'
@@ -44,10 +45,16 @@ class SpaceMouseController:
             if not self.is_calibrated:
                 return None
 
+        # Flush buffer by reading all pending data
+        raw_state = None
         try:
-            raw_state = pyspacemouse.read()
+            for _ in range(10):
+                temp_state = pyspacemouse.read()
+                if temp_state:
+                    raw_state = temp_state
+                else:
+                    break
         except Exception as e:
-            print(f"Error reading device: {e}")
             return None
 
         if not raw_state:
@@ -89,6 +96,18 @@ class SpaceMouseController:
 def button_callback(buttons):
     print(f"Buttons pressed: {buttons}")
 
+def send_data(sock, data):
+    try:
+        sock.setblocking(False)
+        ready = select.select([], [sock], [], 0.001)[1]
+        if ready:
+            message = json.dumps(data).encode('utf-8')
+            sock.send(message + b'\n')
+    except (socket.error, BlockingIOError):
+        pass
+    finally:
+        sock.setblocking(True)
+
 def is_zero_state(state):
     """Check if all axes are zero and no buttons are pressed"""
     for key in ['x', 'y', 'z', 'roll', 'pitch', 'yaw']:
@@ -110,6 +129,9 @@ def main():
 
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)  # Disable Nagle's algorithm
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 8192)  # Smaller send buffer
+            
             sock.connect((SERVER_IP, SERVER_PORT))
             print("Connected to TCP server at", SERVER_IP, SERVER_PORT)
             print("Move the device or press buttons (Ctrl+C to quit)")
@@ -135,19 +157,15 @@ def main():
                             is_sleeping = False
 
                     if not is_sleeping:
-                        # Zamiana danych na JSON i wysłanie
-                        message = json.dumps(state).encode('utf-8')
-                        sock.sendall(message + b'\n')  # newline jako separator ramek
+                        send_data(sock, state)
                     elif last_non_zero_state is not None:
-                        # Sprawdź, czy stan się zmienił (np. przycisk został naciśnięty)
                         current_state = controller.get_calibrated_state()
                         if current_state and (current_state['buttons'] != last_non_zero_state['buttons'] or 
                                             not is_zero_state(current_state)):
                             zero_count = 0
                             is_sleeping = False
                             print("State changed - waking up")
-                            message = json.dumps(current_state).encode('utf-8')
-                            sock.sendall(message + b'\n')
+                            send_data(sock, controller.normalize_data(current_state))
 
                 time.sleep(0.02)
 
