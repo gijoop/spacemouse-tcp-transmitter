@@ -5,7 +5,7 @@ import json
 import select
 from collections import namedtuple
 
-SERVER_IP = '10.0.0.105'
+SERVER_IP = '10.0.0.1'
 SERVER_PORT = 5005
 DEADZONE = 0.15
 
