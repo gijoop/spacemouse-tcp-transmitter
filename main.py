@@ -142,8 +142,8 @@ def main():
 
             while True:
                 state = controller.get_calibrated_state()
-                state = controller.normalize_data(state)
                 if state:
+                    state = controller.normalize_data(state)
                     if is_zero_state(state):
                         zero_count += 1
                         if zero_count >= 10 and not is_sleeping:
